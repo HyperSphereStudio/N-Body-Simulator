@@ -20,6 +20,11 @@ function rk_4(f::Function, initial, t_f, δ = 1)
     return x
 end
 
-f(t, x) = 1 - 2 * x
-
-rk_4(f, (1, 5), 2)
+function rk_4_second_order()
+    iter = abs(Int(round((t_f - t) / δ)))
+    
+    for i in 1:iter
+        
+    end
+    
+end
