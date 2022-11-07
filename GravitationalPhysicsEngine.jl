@@ -3,7 +3,7 @@ using Plots
 
 #Universal Gravitational Constant in km^2
 #const G = 6.6743E-11 / 1000^2
-const G = 1
+const G = .1
 
 mutable struct Body
     m::Float64
@@ -34,6 +34,7 @@ mutable struct Universe{N}
     Base.firstindex(u::Universe) = 1
 end
 
+#Acceleration due to gravity of body 2 on body 1
 function gravitational_accel(b1::Body, b2::Body)
     rv = b2.r - b1.r
     r = norm(rv)
@@ -88,7 +89,7 @@ function simulate(u::Universe, T, state_visitor::Function)
 
 end
 
-function run_final(s::Universe{N}, T = 0.0:.1:10) where N
+function run_final(s::Universe{N}, T = 0.0:1:1000) where N
     println("Starting Universe! of $N bodies and $(length(T)) iterations")
     numf(n) = round(n, digits=3)
 
@@ -123,8 +124,11 @@ function run_final(s::Universe{N}, T = 0.0:.1:10) where N
                 end
             end)
     end
+
+    return display(plt)
 end
 
-bodies = [Body(rand(1:1:4), rand(-5.0:1.0:5.0, 3), rand(-.5:.001:.5, 3)) for j in 1:6]
+b1 = Body(50, [2, 1, 3], [65, 1, 7])
+b2 = Body(25, [-2, 1, -3], [-65, 1, -7])
 
-run_final(Universe(bodies...))
+run_final(Universe(b1, b2))
