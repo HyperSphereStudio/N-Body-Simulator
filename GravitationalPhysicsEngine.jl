@@ -2,7 +2,8 @@ using LinearAlgebra
 using Plots
 
 #Universal Gravitational Constant in km^2
-const G = 6.6743E-11 / 1000^2
+#const G = 6.6743E-11 / 1000^2
+const G = 1
 
 mutable struct Body
     m::Float64
@@ -19,24 +20,25 @@ mutable struct Universe{N}
     bodies::NTuple{N, Body}
     ΔT::Float64
     T::Float64
+    I::Int
     m::Float64
     cg::Array{Float64}
 
     function Universe(bodies::Body...)
-        return new{length(bodies)}(bodies, 0, 0, sum(b -> b.m, bodies), zeros(Float64, 3))
+        return new{length(bodies)}(bodies, 0, 0, 0, sum(b -> b.m, bodies), zeros(Float64, 3))
     end
 
     Base.iterate(u::Universe, state = 1) = length(u.bodies) >= state ? (u.bodies[state], state + 1) : nothing
     Base.getindex(u::Universe, i) = u.bodies[i]
     Base.length(::Universe{N}) where N = N
+    Base.firstindex(u::Universe) = 1
 end
 
 function gravitational_accel(b1::Body, b2::Body)
-    rv = b1.r - b2.r
+    rv = b2.r - b1.r
     r = norm(rv)
-    F_g = G * b2.m / r^2
-    rn = normalize(rv)
-    return -F_g * rn
+    F_g = G * b2.m / r^3
+    return F_g * rv
 end
 
 function net_acceleration(b1, u::Universe)
@@ -49,10 +51,12 @@ function net_acceleration(b1, u::Universe)
 end
 
 function state_instance(u::Universe)
-    for b in u
+    ΔT = u.ΔT
+    
+    Threads.@threads for b in u
         a = net_acceleration(b, u)
-        b.nextv = b.v + a * u.ΔT
-        b.nextr = b.r + b.nextv * u.ΔT
+        b.nextv .= b.v .+ a .* ΔT
+        b.nextr .= b.r .+ b.nextv .* u.ΔT
     end
 
     for b in u
@@ -62,6 +66,7 @@ function state_instance(u::Universe)
 
     u.T += u.ΔT
     u.cg = centerofgravity(u)
+    u.I += 1
 end
 
 function centerofgravity(u::Universe)
@@ -79,16 +84,16 @@ function simulate(u::Universe, T, state_visitor::Function)
     @gif for t in T
         state_instance(u)
         state_visitor(u)
-    end every 1
+    end every 10
 
 end
 
-function run_final(s::Universe{N}) where N
+function run_final(s::Universe{N}, T = 0.0:.1:10) where N
+    println("Starting Universe! of $N bodies and $(length(T)) iterations")
     numf(n) = round(n, digits=3)
 
     plt = plot3d(N)
     
-
     open("data.dat", "w") do io
         
         function write_dat_header()
@@ -109,16 +114,17 @@ function run_final(s::Universe{N}) where N
     
         write_dat_header()
     
-        simulate(s, 0.0:100:100000, 
+        simulate(s, T, 
             function (s::Universe)
                 write_dat_entry()
-                push!(plt, [[s[k].r[i] for k in 1:N] for i in 1:3]...)
+                if s.I % 2 == 0
+                    push!(plt, [[s[k].r[i] for k in 1:N] for i in 1:3]...)
+                    println("Finished Iteration $(s.I)")
+                end
             end)
-    
     end
 end
 
-b1 = Body(5.97E24, [0.0, 0, 0.0], [100, -100, 0])
-b2 = Body(7.347E22, [50000, 25000, -50000], [100, -100, 500])
+bodies = [Body(rand(1:1:4), rand(-5.0:1.0:5.0, 3), rand(-.5:.001:.5, 3)) for j in 1:6]
 
-run_final(Universe(b1, b2))
+run_final(Universe(bodies...))
