@@ -1,30 +1,30 @@
 using StaticArrays
 
-struct TRef{T}
+struct GenRef{T}
     x::Ptr{UInt8}
 
-    TRef{T}(x::Ptr{UInt8}) where T = new{T}(x)
-    TRef{T}(x::Ptr{Cvoid}) where T = new{T}(Base.unsafe_convert(Ptr{UInt8}, x))
-    TRef{T}(x::Ptr{T}) where T = TRef{T}(Base.unsafe_convert(Ptr{UInt8}, x))
-    TRef{T}(x::Ref{T}) where T = TRef{T}(pointer_from_objref(x))
+    GenRef{T}(x::Ptr{UInt8}) where T = new{T}(x)
+    GenRef{T}(x::Ptr{Cvoid}) where T = new{T}(Base.unsafe_convert(Ptr{UInt8}, x))
+    GenRef{T}(x::Ptr{T}) where T = GenRef{T}(Base.unsafe_convert(Ptr{UInt8}, x))
+    GenRef{T}(x::Ref{T}) where T = GenRef{T}(pointer_from_objref(x))
 
-    @inline Base.pointer(x::TRef) = getfield(x, :x)
-    @inline Base.getproperty(x::TRef, s::Symbol) = getproperty(x, Val{s}())
-    @inline Base.setproperty!(x::TRef, s::Symbol, v) = setproperty!(x, Val{s}(), v)
-    @inline Base.getproperty(::TRef{T}, ::Val{N}) where {N, T} = throw("type $T has no field $N")
-    @inline Base.setproperty!(::TRef{T}, ::Val{N}, v) where {N, T} = throw("type $T has no field $N")
-    @inline Base.getindex(x::TRef{T}) where T = Base.unsafe_load(Base.unsafe_convert(Ptr{T}, pointer(x)))
+    @inline Base.pointer(x::GenRef) = getfield(x, :x)
+    @inline Base.getproperty(x::GenRef, s::Symbol) = getproperty(x, Val{s}())
+    @inline Base.setproperty!(x::GenRef, s::Symbol, v) = setproperty!(x, Val{s}(), v)
+    @inline Base.getproperty(::GenRef{T}, ::Val{N}) where {N, T} = throw("type $T has no field $N")
+    @inline Base.setproperty!(::GenRef{T}, ::Val{N}, v) where {N, T} = throw("type $T has no field $N")
+    @inline Base.getindex(x::GenRef{T}) where T = Base.unsafe_load(Base.unsafe_convert(Ptr{T}, pointer(x)))
 end
 
-struct TVal{T, P}
+struct GVal{T, P}
     v::P
 
-    TVal{T, P}(x::T) where {T, P} = new{T, P}(reinterpret(P, x))
-    @inline Base.pointer(x::TVal) = pointer(x.v)
-    @inline Base.getproperty(x::TVal, s::Symbol) = getproperty(x, Val{s}())
-    @inline Base.setproperty!(x::TVal, s::Symbol, v) = setproperty!(x, Val{s}(), v)
-    @inline Base.getproperty(::TVal{T, P}, ::Val{N}) where {N, T, P} = throw("type $T has no field $N")
-    @inline Base.setproperty!(::TVal{T, P}, ::Val{N}, v) where {N, T, P} = throw("type $T has no field $N")
+    GVal{T, P}(x::T) where {T, P} = new{T, P}(reinterpret(P, x))
+    @inline Base.pointer(x::GVal) = pointer(x.v)
+    @inline Base.getproperty(x::GVal, s::Symbol) = getproperty(x, Val{s}())
+    @inline Base.setproperty!(x::GVal, s::Symbol, v) = setproperty!(x, Val{s}(), v)
+    @inline Base.getproperty(::GVal{T, P}, ::Val{N}) where {N, T, P} = throw("type $T has no field $N")
+    @inline Base.setproperty!(::GVal{T, P}, ::Val{N}, v) where {N, T, P} = throw("type $T has no field $N")
 end
 
 struct GClass{R, V, B, U} 
@@ -55,8 +55,8 @@ function GClass(ty::Type)
     haskey(GClasses, ty) && return GClasses[ty]
     eval(x) = Base.eval(x)
 
-    rty = TRef{ty}
-    vty = TVal{ty, SVector{sizeof(ty), UInt8}}
+    rty = GenRef{ty}
+    vty = GVal{ty, SVector{sizeof(ty), UInt8}}
     uty = Union{rty, vty}
     GClasses[ty] = GClass{rty, vty, ty, Union{ty, rty, vty}}()
 
@@ -93,13 +93,3 @@ struct S
     i::Int
     g::S2
 end
-
-r, v, b, s = GClass(S)
-
-g = S(3, S2(4))
-p = v(g)
-p.i = 8
-p.g.i = 223
-p.g = S2(7)
-
-println(p.g.i)

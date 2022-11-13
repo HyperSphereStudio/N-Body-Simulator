@@ -89,7 +89,7 @@ function simulate(u::Universe, T, state_visitor::Function)
 
 end
 
-function run_final(s::Universe{N}, T = 0.0:1:1000) where N
+function run_final(s::Universe{N}, T = 0.0:.1:100) where N
     println("Starting Universe! of $N bodies and $(length(T)) iterations")
     numf(n) = round(n, digits=3)
 
@@ -128,7 +128,7 @@ function run_final(s::Universe{N}, T = 0.0:1:1000) where N
     return display(plt)
 end
 
-b1 = Body(50, [2, 1, 3], [65, 1, 7])
-b2 = Body(25, [-2, 1, -3], [-65, 1, -7])
+b1 = Body(4, [2, 1, 3], [65, 1, 7])
+b2 = Body(1, [-2, 1, -3], [-65, 1, -7])
 
 run_final(Universe(b1, b2))
