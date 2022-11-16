@@ -2,10 +2,9 @@ module BlackHoleSimulator
 
 using LinearAlgebra
 using Plots
-using Reel
 
 include("GeneralizedContextOperations.jl")
-@CreateExecutionContext(false)
+@CreateExecutionContext(true)
 
     
 #Universal Gravitational Constant in km^2

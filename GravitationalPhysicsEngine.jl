@@ -2,8 +2,7 @@ using LinearAlgebra
 using Plots
 
 #Universal Gravitational Constant in km^2
-#const G = 6.6743E-11 / 1000^2
-const G = .1
+const G = 6.6743E-11 / 1000^2
 
 
 mutable struct Body
@@ -126,7 +125,7 @@ function run_final(s::Universe{N}, T = 0.0:.1:100) where N
                         #Center To Earth
                         v[n - 1] = earth - s[n].r
                     end
-                    scatter!(plt, v, color = :jet)
+                    scatter(plt, v, color = :jet)
                     println("Finished Iteration $(s.I)")
                 end
             end)
