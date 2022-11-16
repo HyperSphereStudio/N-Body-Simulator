@@ -1,4 +1,6 @@
 using CUDA
+using Cthulhu
+using Expronicon
 import Adapt
 
 include("GeneralizedMemory.jl")
@@ -29,9 +31,10 @@ macro CreateExecutionContext(useCPU)
         if UseCPU
             eval(quote 
                     macro RegisterType(ty) end
-                    function iterate(f::Function, range, shared_parameters...)
+                    macro iterate(f, range, shared_parameters...)
+                        fun = @eval(@__MODULE__, f)
                         Threads.@threads for c in range
-                            f(c, shared_parameters...)
+                            fun(c, shared_parameters...)
                             return nothing
                         end
                     end
@@ -41,13 +44,18 @@ macro CreateExecutionContext(useCPU)
                     macro RegisterType(ty)
                         return :(Adapt.@adapt_structure $ty)
                     end
-                    function iterate(f::Function, range, shared_parameters...)
-                        function wrapped_fun(inf::Function, r, sp...)
-                            idx = (blockIdx().x - 1) * blockDim().x + threadIdx().x + first(r) - 1
-                            inf(idx, sp...)
-                            return nothing
-                        end
-                        @cuda threads = length(range) wrapped_fun(f, range, shared_parameters...)
+                    macro iterate(f, range, shared_parameters...)
+                        f = JLFunction(f)
+                        idxVarName = f.args[1]
+                        #Remove it 
+                        deleteat!(f.args, 1)
+                        insert!(f.body.args, 1,  :($idxVarName = ((blockIdx().x - 1) * blockDim().x + threadIdx().x - 1) * step($range) + first($range)))
+                        fun = codegen_ast(f)
+                        
+                        return esc(quote 
+                            $fun
+                            @device_code_warntype @cuda threads = length(range) $(f.name)($(shared_parameters...))
+                        end)
                     end
             end)
         end

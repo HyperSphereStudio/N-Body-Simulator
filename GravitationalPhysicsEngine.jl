@@ -5,6 +5,7 @@ using Plots
 #const G = 6.6743E-11 / 1000^2
 const G = .1
 
+
 mutable struct Body
     m::Float64
     r::Array{Float64}
@@ -66,11 +67,11 @@ function state_instance(u::Universe)
     end
 
     u.T += u.ΔT
-    u.cg = centerofgravity(u)
+    u.cg = centerofmass(u)
     u.I += 1
 end
 
-function centerofgravity(u::Universe)
+function centerofmass(u::Universe)
     firstmoment = zeros(Float64, 3)
     for b in u
         firstmoment += b.m * b.r
@@ -114,12 +115,18 @@ function run_final(s::Universe{N}, T = 0.0:.1:100) where N
         end
     
         write_dat_header()
-    
+        v = Array{Array{Float64}, 1}(undef, N - 1)
+
         simulate(s, T, 
             function (s::Universe)
                 write_dat_entry()
                 if s.I % 2 == 0
-                    push!(plt, [[s[k].r[i] for k in 1:N] for i in 1:3]...)
+                    earth = s[1].r
+                    for n in 2:N
+                        #Center To Earth
+                        v[n - 1] = earth - s[n].r
+                    end
+                    scatter!(plt, v, color = :jet)
                     println("Finished Iteration $(s.I)")
                 end
             end)

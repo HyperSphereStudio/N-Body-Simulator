@@ -33,7 +33,7 @@ struct UniverseRef{PIT, MIT}
         return new{typeof(pi), typeof(mi)}(pi, mi, Float32(u.ΔT))
     end
     
-    function sym_index(s::Symbol)
+    function sym_index(s::Symbol)::Int32
         if s == :mass
             return 0
         elseif s == :pos
@@ -47,16 +47,16 @@ struct UniverseRef{PIT, MIT}
         elseif s == :com || s == :nacc
             return 5
         end
-        throw(error("Unable To Identify Symbol $s"))
+        return -1
     end
 
-    @inline Base.getindex(ur::UniverseRef, s::Symbol, i) = ur[Val{sym_index(s)}(), i]
-    @inline Base.setindex!(ur::UniverseRef, v, s::Symbol, i) = ur[Val{sym_index(s)}(), i] = v
+    @inline Base.getindex(ur::UniverseRef, s::Symbol, i::Int32)::Nothing = ur[Val{sym_index(s)}(), i]
+    @inline Base.setindex!(ur::UniverseRef, v, s::Symbol, i::Int32)::Float32 = ur[Val{sym_index(s)}(), i] = v
 
-    @inline Base.getindex(ur::UniverseRef, ::Val{0}, i) = ur.masses[i]
-    @inline Base.setindex!(ur::UniverseRef, m, ::Val{0}, i) = ur.masses[i] = m
-    @inline Base.getindex(ur::UniverseRef, ::Val{N}, i) where N = ur.positional_information[i, N]
-    @inline Base.setindex!(ur::UniverseRef, v, ::Val{N}, i) where N = ur.positional_information[i, N] = v
+    @inline Base.getindex(ur::UniverseRef, ::Val{0}, i::Int32) = ur.masses[i]
+    @inline Base.setindex!(ur::UniverseRef, m, ::Val{0}, i::Int32) = ur.masses[i] = m
+    @inline Base.getindex(ur::UniverseRef, ::Val{N}, i::Int32) where N = ur.positional_information[i, N]
+    @inline Base.setindex!(ur::UniverseRef, v, ::Val{N}, i::Int32) where N = ur.positional_information[i, N] = v
 end 
 
 mutable struct Universe
@@ -80,38 +80,34 @@ mutable struct Universe
     end
 end
 
-function gravitational_kernel(b, r, ΔT)
-    #Zero out Net Acceleration
-    r[:nacc, b] = ZFVec
-
-    #Net Acceleration
-    for b2 in 1:n
-        a = r[:pos, b2] .- r[:pos, b]
-        d = norm(a)
-        F_g = r == 0 ? 0 : G * r[:mass, b2] ./ d^3
-        r[:nacc, b] = r[:nacc, b] .+ F_g .* a
-    end
-
-    r[:tvel, b] = r[:vel, b] .+ r[:nacc, b] .* ΔT
-    r[:tpos, b] = r[:pos, b] .+ r[:tvel, b] .* ΔT
-
-    return nothing
-end
-
-function positional_copy_com_calculation_kernel(b)
-    #Move temp to actual
-    r[:vel, b] = r[:tvel, b]
-    r[:pos, b] = r[:tpos, b]
-
-    #Calculate COM
-    r[:com, b] = r[:mass, b] .* r[:pos, b]
-    return nothing
-end
-
 function state_instance(u::Universe, r::UniverseRef)
     n = length(u.masses)
-    iterate(gravitational_kernel, 1:n, r, u.ΔT)
-    iterate(positional_copy_com_calculation_kernel, 1:n)
+    @iterate(function gravitational_kernel(b::Int, r::UniverseRef, ΔT::Float32, n::Int32)
+                #Zero out Net Acceleration
+                r[:nacc, b] = FVec
+
+                #Net Acceleration
+                for b2 in 1:n
+                    a = r[:pos, b2] .- r[:pos, b]
+                    d = norm(a)
+                    F_g = d == 0 ? 0 : G * r[:mass, b2] ./ d^3
+                    r[:nacc, b] = r[:nacc, b] .+ F_g .* a
+                end
+
+                r[:tvel, b] = r[:vel, b] .+ r[:nacc, b] .* ΔT
+                r[:tpos, b] = r[:pos, b] .+ r[:tvel, b] .* ΔT
+                return nothing
+            end, 1:n, r, Float32(u.ΔT), Int32(n))
+
+    @iterate(function positional_copy_com_calculation_kernel(b)
+                #Move temp to actual
+                r[:vel, b] = r[:tvel, b]
+                r[:pos, b] = r[:tpos, b]
+
+                #Calculate COM
+                r[:com, b] = r[:mass, b] .* r[:pos, b]
+                return nothing
+            end, 1:n)
     u.com = mapreduce(b -> r[:com, b], .+, 1:n) / u.m
     u.I += 1
 end
