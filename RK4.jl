@@ -22,32 +22,52 @@ end
 
 
 #rk_4_second_order((t, v, y) -> 9 * v - 20 * y, (0, 1, 4.5), 1.5, .01)
-function rk_4_second_order(accel, initial, r_f, δ = 1)
-    f = accel
-    g = (t, r) -> r 
-    t, r, z = initial
-    iter = abs(Int(round((r_f - t) / δ)))
+function rk_4_second_order(second_order_diffeq, initial, t_f, δ = 1)
+    f = (t, r, v) -> v
+    g = second_order_diffeq
+    t, r, v = initial
+    tv = 0.0
+    tr = 0.0
 
-    for i in 1:iter
-        nt = t + δ/2
-
-        k1 = f(t, z, r)
-        l1 = g(t, r)
-
-        k2 = f(nt, z + δ * k1/2, r)
-        l2 = g(nt, r + δ * l1/2)
-
-        k3 = f(nt, z + δ * k2/2, r)
-        l3 = g(nt, r + δ * l2/2)
-
-        k4 = f(nt, z + δ * k3, r)
-        l4 = g(nt, r + δ * l3)
-        
-        z += δ * (k1 + 2 * k2 + 2 * k3 + k4) / 6
-        r += δ * (l1 + 2 * l2 + 2 * l3 + l4) / 6
-        
-        t = nt
+    if t_f < t
+        iter = Int(round((t - t_f) / δ))
+        δ *= -1
+    else
+        iter = Int(round((t_f - t) / δ))
     end
 
-    return (t, r, z)
+    for i in 1:iter
+        nt = t
+        tr = r
+        tv = v
+
+        k1 = δ * f(t, tr, tv)
+        l1 = δ * g(t, tr, tv)
+
+        nt = t + δ/2
+        tr = r + k1/2
+        tv = v + l1/2
+
+        k2 = δ * f(nt, tr, tv)
+        l2 = δ * g(nt, tr, tv)
+
+        tr = r + k2/2
+        tv = v + l2/2
+
+        k3 = δ * f(nt, tr, tv)
+        l3 = δ * g(nt, tr, tv)
+
+        tr = r + k3
+        tv = v + l3
+        nt = t + δ
+
+        k4 = δ * f(nt, tr, tv)
+        l4 = δ * g(nt, tr, tv)
+        
+        r += (k1 + 2 * k2 + 2 * k3 + k4) / 6
+        v += (l1 + 2 * l2 + 2 * l3 + l4) / 6
+        t += δ
+    end
+
+    return (t, r, v)
 end
