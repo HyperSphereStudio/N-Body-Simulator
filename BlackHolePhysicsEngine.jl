@@ -4,148 +4,99 @@ using LinearAlgebra
 using Plots
 
 include("GeneralizedContextOperations.jl")
-@CreateExecutionContext(true)
-
+@CreateExecutionContext(false)
     
 #Universal Gravitational Constant in km^2
 #const G = 6.6743E-11 / 1000^2
-const G = .1
+const G = 7
 const ZFVec = ntuple(x -> Float32(0), 3)
 const FVec = NTuple{3, Float32}
 
 struct Body
-    m
-    r
-    v
+    m::Float32
+    r::FVec
+    v::FVec
 
-    Body(m, r, v) = new(m, r, v)
+    Body(m, r, v) = new(Float32(m), FVec(v), FVec(r))
 end
 
-struct UniverseRef{PIT, MIT}
-    positional_information::PIT
-    masses::MIT
-    ΔT::Float32
+mass(massi, idx) = massi[idx]
+mass(massi, idx, m) = massi[idx] = m
+pos(spatiali, idx) = spatiali[idx, 1]
+pos(spatiali, idx, v) = spatiali[idx, 1] = v
+vel(spatiali, idx) = spatiali[idx, 2]
+vel(spatiali, idx, v) = spatiali[idx, 2] = v
+tpos(spatiali, idx) = spatiali[idx, 3]
+tpos(spatiali, idx, v) = spatiali[idx, 3] = v
+tvel(spatiali, idx) = spatiali[idx, 4]
+tvel(spatiali, idx, v) = spatiali[idx, 4] = v
 
-    function UniverseRef(u)
-        pi = MakeRef(u.positional_information)
-        mi = MakeRef(u.masses)
-        return new{typeof(pi), typeof(mi)}(pi, mi, Float32(u.ΔT))
-    end
-    
-    function sym_index(s::Symbol)::Int32
-        if s == :mass
-            return 0
-        elseif s == :pos
-            return 1
-        elseif s == :vel
-            return 2
-        elseif s == :tpos
-            return 3
-        elseif s == :tvel
-            return 4
-        elseif s == :com || s == :nacc
-            return 5
-        end
-        return -1
-    end
-
-    @inline Base.getindex(ur::UniverseRef, s::Symbol, i::Int32)::Nothing = ur[Val{sym_index(s)}(), i]
-    @inline Base.setindex!(ur::UniverseRef, v, s::Symbol, i::Int32)::Float32 = ur[Val{sym_index(s)}(), i] = v
-
-    @inline Base.getindex(ur::UniverseRef, ::Val{0}, i::Int32) = ur.masses[i]
-    @inline Base.setindex!(ur::UniverseRef, m, ::Val{0}, i::Int32) = ur.masses[i] = m
-    @inline Base.getindex(ur::UniverseRef, ::Val{N}, i::Int32) where N = ur.positional_information[i, N]
-    @inline Base.setindex!(ur::UniverseRef, v, ::Val{N}, i::Int32) where N = ur.positional_information[i, N] = v
-end 
-
-mutable struct Universe
-    positional_information::TArray{FVec, 2}
-    masses::TArray{Float32, 1}
-    m::Float64
-    com::FVec
-    ΔT::Float64
-    I::Int
-
-    function Universe(ΔT::Float64, bodies::Body...)
-        ba = TArray{FVec, 2}(undef, length(bodies), 5)
-        masses = TArray{Float32, 1}(undef, length(bodies))
-        for i in eachindex(bodies)
-            masses[i] = Float32(bodies[i].m)
-            ba[i, 1] = FVec(bodies[i].r)
-            ba[i, 2] = FVec(bodies[i].v)
-        end
-        m = sum(b -> b.m, bodies)
-        return new(ba, masses, m, ZFVec, ΔT, 0)
-    end
-end
-
-function state_instance(u::Universe, r::UniverseRef)
-    n = length(u.masses)
-    @iterate(function gravitational_kernel(b::Int, r::UniverseRef, ΔT::Float32, n::Int32)
+function state_instance(s, m, ΔT)
+    @iterate(function gravitational_kernel(b, s, m, ΔT)
                 #Zero out Net Acceleration
-                r[:nacc, b] = FVec
+                nacc = ZFVec
 
                 #Net Acceleration
-                for b2 in 1:n
-                    a = r[:pos, b2] .- r[:pos, b]
-                    d = norm(a)
-                    F_g = d == 0 ? 0 : G * r[:mass, b2] ./ d^3
-                    r[:nacc, b] = r[:nacc, b] .+ F_g .* a
+                for b2 in 1:N
+                    r = pos(s, b2) .- pos(s, b)
+                    d = norm(r)
+                    F_g = Float32(d == 0 ? 0.0 : G * mass(m, b2) ./ d^3)
+                    nacc = nacc .+ F_g .* r
                 end
+                
+                tvel(s, vel(s, b) .+ nacc .* ΔT)
+                tpos(s, pos(s, b) .+ tvel(s, b) .* ΔT)
 
-                r[:tvel, b] = r[:vel, b] .+ r[:nacc, b] .* ΔT
-                r[:tpos, b] = r[:pos, b] .+ r[:tvel, b] .* ΔT
-                return nothing
-            end, 1:n, r, Float32(u.ΔT), Int32(n))
+            end, 1:N, s, m, ΔT)
 
-    @iterate(function positional_copy_com_calculation_kernel(b)
+    @iterate(function positional_copy_kernel(b, s)
                 #Move temp to actual
-                r[:vel, b] = r[:tvel, b]
-                r[:pos, b] = r[:tpos, b]
-
-                #Calculate COM
-                r[:com, b] = r[:mass, b] .* r[:pos, b]
-                return nothing
-            end, 1:n)
-    u.com = mapreduce(b -> r[:com, b], .+, 1:n) / u.m
-    u.I += 1
+                vel(s, b, tvel(s, b))
+                pos(s, b, tpos(s, b))
+            end, 1:N, s)
 end
 
-function simulate(u::Universe, T, state_visitor::Function)
-    u.ΔT = step(T)
-    ur = UniverseRef(u)
-
-    @gif for t in T
-        state_instance(u, ur)
-        state_visitor(ur)
-    end every 10
+function simulate(spatial, mass, T, state_visitor::Function)
+    i = 1
+    for t in T
+        state_instance(spatial, mass, step(T))
+        state_visitor(spatial, mass, t, i)
+        i += 1
+    end
 end
 
-function run_final(bodies::Body...; T = 0.0:1:200)
+function nbodysim(T, bodies::Body...)
     N = length(bodies)
-    u = Universe(step(T), bodies...)
+    a = Animation()
+
+    spatial_information = TArray{FVec, 2}(undef, length(bodies), 4)
+    mass_information = TArray{FP}(undef, length(bodies))
+    for i in eachindex(bodies)
+        spatial_information[i, 1] = bodies[i].r
+        spatial_information[i, 2] = bodies[i].v
+        mass_information[i] = bodies[i].m
+    end
 
     println("Starting Universe! of $N bodies and $(length(T)) iterations")
-    numf(n) = round(n, digits=3)
 
-    plt = plot3d(N, xlim = (-500, 500), ylim = (-500, 500), zlim = (-500, 500), legend = false)
-    
-    v = Array{FVec, 1}(undef, N)
-    simulate(u, T, 
-            function (r::UniverseRef)
-                if u.I % 2 == 0
+    plt = plot3d(N, legend = false)
+    pts = Array{FVec, 1}(undef, N)
+
+    simulate(spatial_information, mass_information, T, 
+            function (r, t, i)
+                if i % 2 == 0
                     for n in 1:N
-                        #Center To COM
-                        v[n] = r[:pos, n] .- u.com
+                        pts[n] = r[:pos, n]
                     end
-                    scatter(plt, v, color = :jet)
-                    println("Finished Iteration $(u.I)")
+                    frame(a, scatter(plt, pts, color = :jet))
+                    println("Finished Iteration $i")
                 end
         end)
+
+    return display(gif(a))
 end
 
-blackhole = Body(4E3, [0, 0, 0], [0, 0, 0])
-bodies = [Body(rand(10:1:400), rand(-50.0:1.0:50.0, 3), rand(-.3:.001:.3, 3)) for j in 1:300]
-
-run_final(blackhole, bodies...)
+blackhole = Body(4E2, [0, 0, 0], [0, 0, 0])
+bodies = [Body(rand(10:1:40), rand(-5.0:1.0:5.0, 3), rand(0:0, 3)) for j in 1:1]
+nbodysim(0.0:1.0:200.0, blackhole, bodies...)
 end
