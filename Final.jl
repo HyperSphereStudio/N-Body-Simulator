@@ -28,21 +28,20 @@ end
 
 function rk4(t, δ, pv, tpv, lk, nk, va)
     tpv .= pv
-    lk .= δ .* va(t, pv)
+    lk .= δ .* va(t, tpv)               #K1
     nk .= lk
 
     tpv .= pv .+ lk ./ 2
-    lk .= δ .* va(t + δ/2, tpv)
+    lk .= δ .* va(t + δ/2, tpv)         #K2
     nk .+= 2 .* lk
 
     tpv .= pv .+ lk ./ 2
-    lk .= δ .* va(t + δ/2, tpv)
+    lk .= δ .* va(t + δ/2, tpv)         #K3
     nk .+= 2 .* lk
 
     tpv .= pv .+ lk
-    lk .= δ .* va(t + δ, tpv)
+    lk .= δ .* va(t + δ, tpv)           #K4
     nk .+= lk
-
     tpv .= pv .+ nk / 6
 end
 
@@ -54,7 +53,7 @@ function nbody(u::Universe{N}, integrator::F, iteration_callback::F2, T) where {
 
     i = 1
     for t in T
-        Threads.@threads for b in 1:N
+        for b in 1:N
             bod = u.Bodies[b]
             tpva = bod.tpva
 
@@ -71,10 +70,10 @@ function nbody(u::Universe{N}, integrator::F, iteration_callback::F2, T) where {
                         q = bds[b2]
                         r .= @view(q.pv[1, :]) .- @view(pv[1, :])           #Solve for the r vector representing the vector from p -> q 
                         d = sqrt(sum(r -> r ^ 2, r))                        #Solve for the distance of r
-                        (d == 0) && continue                                #Probaly the same object so have it stick or do nothing
+                        (b == b2 || d == 0) && continue                                #Probaly the same object so have it stick or do nothing
                         a .+= r .* q.μ / d ^ 3
                     end
-                    va[1, :] .= pv[2, :]
+                    @view(va[1, :]) .= @view(pv[2, :])
                     return va
                 end)
         end
@@ -163,4 +162,4 @@ end
 earth = Body(1E26, [0, 0, 0], [15, 25, 35])
 moon = Body(1E25, [3000, 2000, 0], [-5, 10, -10])
 #moon2 = Body(1E-5, [0, -100, 0], [0, 0, -sqrt(G)])
-simulate(0.0:.01:3600.0, polynomial_integrator, earth, moon; plotevery=1000)
+simulate(0.0:.1:3600.0, rk4, earth, moon; plotevery=1000)

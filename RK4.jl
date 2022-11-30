@@ -11,9 +11,8 @@ function rk_4(f::Function, initial, t_f, δ = 1)
         k2 = δ * f(t + δ/2, x + k1/2)
         k3 = δ * f(t + δ/2, x + k2/2)
         k4 = δ * f(t + δ, x + k3)
-        
         x += (k1 + 2 * k2 + 2 * k3 + k4) / 6
-        t = nt
+        t += δ
     end
 
     return x
