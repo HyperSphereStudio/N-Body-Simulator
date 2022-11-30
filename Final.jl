@@ -1,5 +1,5 @@
 using Plots
-using FastBroadcast
+using ProgressMeter
 gr()
 
 const FP = Float64
@@ -94,7 +94,8 @@ function simulate(T, integrator, bodies...; plotevery = 50)
     pts = [view(b.pv, 1, 1:3) for b in u.Bodies]
     com = zeros(FP, 3)
     fei = 1
-    points = Array{NTuple{3, FP}, 2}(undef, Int(floor(length(T) / plotevery)), N + 1)
+    numPts = Int(floor(length(T) / plotevery))
+    points = Array{NTuple{3, FP}, 2}(undef, numPts, N + 1)
 
     function CapturePoints()
         for i in 1:length(pts)
@@ -116,7 +117,7 @@ function simulate(T, integrator, bodies...; plotevery = 50)
     end
 
     function BuildPlot()
-        println("Building Plot...")
+        prog = Progress(numPts, desc="Building Plot", barglyphs=BarGlyphs("[=> ]"), barlen=50, color=:blue)
         plt = plot3d(N + 1, 
             xlabel="X [km]", ylabel="Y [km]", zlabel = "Z [km]", title = "$N Body Space Curve", 
             xlims=(-1E5, 1E5), ylims=(-1E5, 1E5), zlims=(-1E5, 1E5),
@@ -132,20 +133,25 @@ function simulate(T, integrator, bodies...; plotevery = 50)
             r += 1
         end
 
+        pei = 1
         for r in eachrow(points)
             scplt = scatter(plt, r, markersize = 3, color=:red)
-            scatter!(trajectories, markersize = 1, color=:gray)
+          #  scatter!(trajectories, markersize = 1, color=:gray)
             frame(a, scplt)
+            update!(prog, pei)
+            pei += 1
         end
         return gif(a, fps=10)
     end
     
+    prog = Progress(numPts, desc="Performing Universe Calculations", barglyphs=BarGlyphs("[=> ]"), barlen=50, color=:yellow)
+
     nbody(u, integrator,
         function(t, i)
             if i % plotevery == 0
                 CenterOfMass()
                 CapturePoints()
-                println("Finished Iteration $i")
+                update!(prog, fei)
                 fei += 1
             end
         end, T)
