@@ -3,20 +3,18 @@ using ProgressMeter
 gr()
 
 const FP = Float64
-const G = 6.68E-20
+const G = 6.67259E-20
 
 struct Body
     μ::FP
     pv::Array{FP, 2}
-    tpva::Array{FP, 2}
-    tlk::Array{FP, 2}
-    tnk::Array{FP, 2}
+    tpv::Array{FP, 2}
 
     function Body(m, r, v)
         pv = zeros(FP, 2, 3)
         pv[1, :] = r
         pv[2, :] = v
-        return new(G * m, pv, zeros(FP, 3, 3), zeros(FP, 2, 3), zeros(FP, 2, 3))
+        return new(G * m, pv, zeros(FP, 2, 3))
     end
 end
 
@@ -26,26 +24,15 @@ struct Universe{N}
     Base.length(::Universe{N}) where N = N
 end
 
-function rk4(t, δ, pv, tpv, lk, nk, va)
-    tpv .= pv
-    lk .= δ .* va(t, tpv)               #K1
-    nk .= lk
-
-    tpv .= pv .+ lk ./ 2
-    lk .= δ .* va(t + δ/2, tpv)         #K2
-    nk .+= 2 .* lk
-
-    tpv .= pv .+ lk ./ 2
-    lk .= δ .* va(t + δ/2, tpv)         #K3
-    nk .+= 2 .* lk
-
-    tpv .= pv .+ lk
-    lk .= δ .* va(t + δ, tpv)           #K4
-    nk .+= lk
-    tpv .= pv .+ nk / 6
+function rk4_integrator(t, δ, pv, va)
+    k1 = δ .* va(t, pv)               
+    k2 = δ .* va(t + δ/2, pv .+ k1 ./ 2)
+    k3 = δ .* va(t + δ/2, pv .+ k2 ./ 2)
+    k4 = δ .* va(t + δ, pv .+ k3)
+    return pv .+ (k1 + 2 * k2 + 2 * k3 + k4) / 6
 end
 
-polynomial_integrator(t, δ, pv, tpv, lk, nk, va) = tpv .= pv .+ δ .* va(t, pv)
+polynomial_integrator(t, δ, pv, va) = pv .+ δ .* va(t, pv)
 
 function nbody(u::Universe{N}, integrator::F, iteration_callback::F2, T) where {N, F, F2}
     δ = step(T)
@@ -55,32 +42,27 @@ function nbody(u::Universe{N}, integrator::F, iteration_callback::F2, T) where {
     for t in T
         for b in 1:N
             bod = u.Bodies[b]
-            tpva = bod.tpva
 
-            r = @view(tpva[1, :])
-            tpv = @view(tpva[1:2, :])
-            va = @view(tpva[2:3, :])
-            v = @view(tpva[2, :])
-            a = @view(tpva[3, :])
-
-            integrator(t, δ, bod.pv, tpv, bod.tlk, bod.tnk,   
-                function single_nbody_velacc(t, pv)
-                    a .= 0
-                    for b2 in 1:N
-                        q = bds[b2]
-                        r .= @view(q.pv[1, :]) .- @view(pv[1, :])           #Solve for the r vector representing the vector from p -> q 
-                        d = sqrt(sum(r -> r ^ 2, r))                        #Solve for the distance of r
-                        (b == b2 || d == 0) && continue                                #Probaly the same object so have it stick or do nothing
-                        a .+= r .* q.μ / d ^ 3
-                    end
-                    @view(va[1, :]) .= @view(pv[2, :])
-                    return va
-                end)
+            bod.tpv .= integrator(t, δ, bod.pv,   
+            function single_nbody_velacc(t, pv)
+                va = zeros(FP, 2, 3)
+                a = @view(va[2, :])
+                p = @view(pv[1, :])
+                va[1, :] .= pv[2, :]
+                for b2 in 1:N
+                    q = bds[b2]
+                    r = @view(q.pv[1, :]) - p                        #Solve for the r vector representing the vector from p -> q 
+                    d = sqrt(sum(r -> r ^ 2, r))                     #Solve for the distance of r
+                    (b == b2 || d == 0) && continue                  #Probaly the same object so have it stick or do nothing
+                    a .+= r * q.μ / d ^ 3
+                end
+                return va
+            end)
         end
 
         for b in 1:N
             bod = u.Bodies[b]
-            bod.pv .= @view(bod.tpva[1:2, :])
+            bod.pv .= bod.tpv
         end
         iteration_callback(t, i)
         i += 1
@@ -140,7 +122,7 @@ function simulate(T, integrator, bodies...; plotevery = 50)
             update!(prog, pei)
             pei += 1
         end
-        return gif(a, fps=10)
+        return gif(a, fps=5)
     end
     
     prog = Progress(numPts, desc="Performing Universe Calculations", barglyphs=BarGlyphs("[=> ]"), barlen=50, color=:yellow)
@@ -154,6 +136,8 @@ function simulate(T, integrator, bodies...; plotevery = 50)
                 fei += 1
             end
         end, T)
+    
+    println([b.pv for b in u.Bodies])
 
     println("Universe Calculations completed")   
     return BuildPlot()
@@ -161,5 +145,6 @@ end
 
 earth = Body(1E26, [0, 0, 0], [15, 25, 35])
 moon = Body(1E25, [3000, 2000, 0], [-5, 10, -10])
-#moon2 = Body(1E-5, [0, -100, 0], [0, 0, -sqrt(G)])
-simulate(0.0:.1:3600.0, rk4, earth, moon; plotevery=1000)
+moon2 = Body(1E25, [3000, -2000, 0], [-5, -10, 10])
+
+simulate(0.0:.5:3600, rk4_integrator, earth, moon, moon2; plotevery=100)
