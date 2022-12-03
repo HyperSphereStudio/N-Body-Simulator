@@ -1,5 +1,9 @@
 using Plots
 using ProgressMeter
+using SatelliteToolbox
+using GeometryBasics
+using GLMakie
+using FileIO
 gr()
 
 const FP = Float64
@@ -99,29 +103,22 @@ function simulate(T, integrator, bodies...; plotevery = 50)
 
     function BuildPlot()
         prog = Progress(numPts, desc="Building Plot", barglyphs=BarGlyphs("[=> ]"), barlen=50, color=:blue)
-        plt = plot3d(N + 1, 
-            xlabel="X [km]", ylabel="Y [km]", zlabel = "Z [km]", title = "$N Body Space Curve", 
-            xlims=(-1E5, 1E5), ylims=(-1E5, 1E5), zlims=(-1E5, 1E5),
-            legend = false)
+        img = load("FAROOQM.jpg")    
+        limit = 2E6
+        limits = (-limit/2, limit/2, -limit/2, limit/2, -limit/2, limit/2)
         a = Animation()
-        trajectories = [Vector{FP}(undef, fei * (N + 1)) for i in 1:3]
-        
-        r = 1
-        for b in 1:(N+1)
-            for i in 1:3
-                trajectories[i][r] = points[r, b][i]
-            end
-            r += 1
-        end
 
         pei = 1
         for r in eachrow(points)
-            scplt = scatter(plt, r, markersize = 3, color=:red)
-          #  scatter!(trajectories, markersize = 1, color=:gray)
+            f = Figure()
+            a = Axis(f[1,1], aspect = (1,1,1), viewmode = :fit, limits=limits)
+            earth = GeometryBasics.Sphere(r[1], 750)
+            mesh!(a, earth, color=img)
             frame(a, scplt)
             update!(prog, pei)
             pei += 1
         end
+
         return gif(a, fps=5)
     end
     
@@ -136,12 +133,11 @@ function simulate(T, integrator, bodies...; plotevery = 50)
                 fei += 1
             end
         end, T)
-    
-    println([b.pv for b in u.Bodies])
 
     println("Universe Calculations completed")   
     return BuildPlot()
 end
+
 
 earth = Body(1E26, [0, 0, 0], [15, 25, 35])
 moon = Body(1E25, [3000, 2000, 0], [-5, 10, -10])
