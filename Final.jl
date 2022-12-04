@@ -94,7 +94,7 @@ function CenterOfMass(bodies)
 end
 
 BuildPlot(bodies, snap_shot, N) = Progressable(rows(snap_shot), "Building Plot", :blue) do prog
-    images = load.(["Earth.png", "FAROOQM.jpg", "Moon.jpg"])
+    images = load.(["Earth.png", "Moon.jpg", "FAROOQM.jpg"])
     set_theme!(backgroundcolor = :black)
     fig = Figure()
     ax = Axis3(fig[1, 1], aspect = (1, 1, 1), viewmode=:fit, limits = ((-2E4, 2E4), (-2E4, 2E4), (-2E4, 2E4)))
@@ -116,7 +116,7 @@ BuildPlot(bodies, snap_shot, N) = Progressable(rows(snap_shot), "Building Plot",
         #Initialize Meshes
         mesh!(ax, 
             GeometryBasics.Sphere(Point3f(initial_positions[i]), bodies[i].planet_size), 
-            color = images[i > 3 ? 3 : i], 
+            color = images[i > 3 ? 2 : i], 
             transformation = Transformation(translation = body_translation_interfaces[i]))
         
         for b in 1:N; lines!(ax, trajectory_positions[b], color = :gray) end     #Initialize Trajectories
