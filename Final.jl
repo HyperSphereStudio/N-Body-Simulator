@@ -238,5 +238,6 @@ end
 earth = Body(1E26, [0, 0, 0], [15, 25, 35], 2)
 moon = Body(1E25, [3000, 2000, 0], [-5, 10, -10], 1)
 moon2 = Body(1E25, [3000, -2000, 0], [-5, -10, 10], 1)
+moon3 = Body(1E25, [-3000, -2000, 0], [-5, 10, 10], 1)
 
-simulate(0.0:.1:3600, rk4_integrator, earth, moon, moon2; plotevery=100, writedata = true)
+simulate(0.0:.1:3600, rk4_integrator, earth, moon, moon2, moon3; plotevery=100, writedata = true)
