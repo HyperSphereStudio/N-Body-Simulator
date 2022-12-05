@@ -3,10 +3,15 @@ using GeometryBasics
 using GLMakie
 using FileIO
 using Printf
+using StaticArrays
 
 const FP = Float64
 const G = 6.67259E-20
 const BodySizeScale = 1E3
+const EnableMultiThreading = false
+const Limit = 1.5E4
+const UseDynamicLimits = false
+const FPS = 20
 
 struct Body
     μ::FP
@@ -41,13 +46,17 @@ polynomial_integrator(t, δ, pv, va) = pv .+ δ .* va(t, pv)
 rows(x) = size(x, 1)
 cols(x) = size(x, 2)
 
+macro MultiThread(ex)
+    return EnableMultiThreading ? esc(:(Threads.@threads $ex)) : esc(ex)
+end
+
 function nbody(u::Universe{N}, integrator::F, iteration_callback::F2, T) where {N, F, F2}
     δ = step(T)
     bds = u.Bodies
 
     i = 1
     for t in T
-        for b in 1:N
+        @MultiThread for b in 1:N
             bod = u.Bodies[b]
 
             bod.tpv .= integrator(t, δ, bod.pv,   
@@ -93,11 +102,14 @@ function CenterOfMass(bodies)
     return com
 end
 
+GenerateLimits(pos) = ntuple(i -> (FP(pos[i] - Limit), FP(pos[i] + Limit)), 3)
+
 BuildPlot(bodies, snap_shot, N) = Progressable(rows(snap_shot), "Building Plot", :blue) do prog
-    images = load.(["Earth.png", "Moon.jpg", "FAROOQM.jpg"])
+    images = load.(["Assets/Earth.png", "Assets/FAROOQM.jpg", "Assets/Moon.jpg"])
     set_theme!(backgroundcolor = :black)
     fig = Figure()
-    ax = Axis3(fig[1, 1], aspect = (1, 1, 1), viewmode=:fit, limits = ((-2E4, 2E4), (-2E4, 2E4), (-2E4, 2E4)))
+    ax = Axis3(fig[1, 1], aspect = (1, 1, 1), viewmode=:fit, limits = GenerateLimits([0, 0, 0]))
+
     ax.titlecolor = :red
     ax.xgridcolor = :green
     ax.ygridcolor = :green
@@ -108,24 +120,20 @@ BuildPlot(bodies, snap_shot, N) = Progressable(rows(snap_shot), "Building Plot",
     ax.title = "$N Body Solution"
 
     #Initialize Observables
-    initial_positions = [snap_shot[1, i] for i in 1:N]
-    body_translation_interfaces = [Observable(Point3f(0)) for i in 1:N]
+    meshes = Array{Any}(undef, N)
     trajectory_positions = [Observable(Point3f[]) for i in 1:(N+1)]
 
     for i in 1:N
         #Initialize Meshes
-        mesh!(ax, 
-            GeometryBasics.Sphere(Point3f(initial_positions[i]), bodies[i].planet_size), 
-            color = images[i > 3 ? 2 : i], 
-            transformation = Transformation(translation = body_translation_interfaces[i]))
+        meshes[i] = mesh!(ax, Sphere(Point3f(0), bodies[i].planet_size), color = images[i > 3 ? 3 : i])
         
         for b in 1:N; lines!(ax, trajectory_positions[b], color = :gray) end     #Initialize Trajectories
         lines!(ax, trajectory_positions[end], color = :red)                      #Initialize COM Trajectory
     end
 
-    return record(fig, "Trajectory.mp4", 1:rows(snap_shot); framerate = 10) do f
+    return record(fig, "Trajectory.mp4", 1:rows(snap_shot); framerate = FPS) do f
         for w in 1:N
-            body_translation_interfaces[w][] = snap_shot[f, w] .- initial_positions[w]
+            translate!(meshes[w], snap_shot[f, w])
         end
 
         for w in 1:(N + 1)
@@ -133,7 +141,11 @@ BuildPlot(bodies, snap_shot, N) = Progressable(rows(snap_shot), "Building Plot",
             notify(trajectory_positions[w])
         end
 
-        autolimits!(ax)
+        if UseDynamicLimits
+            autolimits!(ax)
+        else
+            ax.limits[] = GenerateLimits(snap_shot[f, end])
+        end
         update!(prog, f)
     end
 end
@@ -148,16 +160,17 @@ end
 
 InitWriteDataFile(N) = begin
     io = open("data.dat", "w")
-    write(io, "t\t\t\t|")
+    write(io, "t\t\t|")
     for i in 1:N
-        write(io, "\t\t\t\tr$i\t\t\t\t|\t\t\t\tv$i\t\t\t\t|")
+        write(io, "\t\t\t\tr$i\t\t\t|\t\t\tv$i\t\t\t\t|")
     end
     write(io, "\n")
     return io
 end
 
+numf(n) = string(@sprintf("%9.2f", n))
+
 WriteDataFileEntry(bodies, t, io) = begin
-    numf(n) = string(@sprintf("%9.2f", n))
     write_array(v) = join([numf(i) for i in v])
     write(io, "$(numf(t))\t|")
     for b in bodies
@@ -187,9 +200,9 @@ function simulate(T, integrator, bodies...; plotevery = 50, writedata = false)
     function print_state_vectors(isFirst)
         name = isFirst ? "i" : "f"
         for i in 1:N
-            isFirst && (println("m_$i = ", u.Bodies[i].μ / G))
-            println("R_{$name, $i} = ", u.Bodies[i].pv[1, :], " km")
-            println("V_{$name, $i} = ", u.Bodies[i].pv[2, :], " km")
+            isFirst && (println("m_$i = ", round(u.Bodies[i].μ / G, digits=2)))
+            println("R_{$name, $i} = ", round.(u.Bodies[i].pv[1, :], digits=2), " km")
+            println("V_{$name, $i} = ", round.(u.Bodies[i].pv[2, :], digits=2), " km")
             println()
         end
     end
@@ -208,7 +221,7 @@ function simulate(T, integrator, bodies...; plotevery = 50, writedata = false)
             end, T)
     end
 
-    print_state_vectors(true)
+    print_state_vectors(false)
     writedata && (close(io))
 
     return BuildPlot(u.Bodies, snap_shot, N)
@@ -217,4 +230,5 @@ end
 earth = Body(1E26, [0, 0, 0], [15, 25, 35], 2)
 moon = Body(1E25, [3000, 2000, 0], [-5, 10, -10], 1)
 moon2 = Body(1E25, [3000, -2000, 0], [-5, -10, 10], 1)
+
 simulate(0.0:.1:3600, rk4_integrator, earth, moon, moon2; plotevery=100, writedata = true)
