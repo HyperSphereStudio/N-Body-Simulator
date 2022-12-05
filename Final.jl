@@ -14,7 +14,7 @@ const UseDynamicLimits = false
 const FPS = 20
 
 struct Body
-    μ::FP
+    m::FP
     pv::Array{FP, 2}
     tpv::Array{FP, 2}
     planet_size::Int32
@@ -23,7 +23,7 @@ struct Body
         pv = zeros(FP, 2, 3)
         pv[1, :] = r
         pv[2, :] = v
-        return new(G * m, pv, zeros(FP, 2, 3), s * BodySizeScale)
+        return new(m, pv, zeros(FP, 2, 3), s * BodySizeScale)
     end
 end
 
@@ -73,7 +73,7 @@ function nbody(u::Universe{N}, integrator::F, iteration_callback::F2, T) where {
                         r = @view(q.pv[1, :]) - p           #Solve for the r vector representing the vector from p -> q 
                         d = sqrt(sum(r -> r ^ 2, r))        #Solve for the distance of r
                         (b == b2 || d == 0) && continue     #Probaly the same object so have it stick or do nothing
-                        a .+= r * q.μ / d ^ 3
+                        a .+= G * r * q.m / d ^ 3
                     end
                     return va
                 end)
@@ -101,8 +101,8 @@ function CenterOfMass(bodies)
     com = zeros(FP, 3)
     m = 0.0
     for b in bodies
-        com .+= b.μ * @view(b.pv[1, :])
-        m += b.μ
+        com .+= b.m * @view(b.pv[1, :])
+        m += b.m
     end
     com ./= m
     return com
@@ -137,7 +137,7 @@ BuildPlot(bodies, snap_shot, N) = Progressable(rows(snap_shot), "Building Plot",
         lines!(ax, trajectory_positions[end], color = :red)                      #Initialize COM Trajectory
     end
 
-    return record(fig, "Trajectory.mp4", 1:rows(snap_shot); framerate = FPS) do f
+    return record(fig, "Trajectory.gif", 1:rows(snap_shot); framerate = FPS) do f
         for w in 1:N
             translate!(meshes[w], snap_shot[f, w])
         end
@@ -176,7 +176,7 @@ InitWriteDataFile(N) = begin
     return io
 end
 
-numf(n) = string(@sprintf("%9.2f", n))
+numf(n) = string(@sprintf("%10.2f", n))
 
 WriteDataFileEntry(bodies, t, io) = begin
     write_array(v) = join([numf(i) for i in v])
@@ -208,7 +208,7 @@ function simulate(T, integrator, bodies...; plotevery = 50, writedata = false)
     function print_state_vectors(isFirst)
         name = isFirst ? "i" : "f"
         for i in 1:N
-            isFirst && (println("m_$i = ", round(u.Bodies[i].μ / G, digits=2)))
+            isFirst && (println("m_$i = ", round(u.Bodies[i].m, digits=2)))
             println("R_{$name, $i} = ", round.(u.Bodies[i].pv[1, :], digits=2), " km")
             println("V_{$name, $i} = ", round.(u.Bodies[i].pv[2, :], digits=2), " km")
             println()
